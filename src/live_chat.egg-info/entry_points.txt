@@ -1,2 +1,0 @@
-[console_scripts]
-live-chat = live_chat.main:main
