@@ -1,0 +1,9 @@
+pyproject.toml
+src/live_chat/__init__.py
+src/live_chat.egg-info/PKG-INFO
+src/live_chat.egg-info/SOURCES.txt
+src/live_chat.egg-info/dependency_links.txt
+src/live_chat.egg-info/entry_points.txt
+src/live_chat.egg-info/requires.txt
+src/live_chat.egg-info/top_level.txt
+tests/test_config.py

@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: live-chat
+Version: 0.1.0
+Requires-Python: >=3.10
+Requires-Dist: sounddevice>=0.5
+Requires-Dist: silero-vad>=5.1
+Requires-Dist: openwakeword>=0.6
+Requires-Dist: mlx-whisper>=0.4
+Requires-Dist: kokoro>=0.9
+Requires-Dist: anthropic>=0.42
+Requires-Dist: rich>=14.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: numpy>=1.26
+Requires-Dist: soundfile>=0.12
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
