@@ -141,3 +141,23 @@ Components are standalone async modules. `pipeline.py` orchestrates via `asyncio
 - No tool use / agentic actions
 - No persistent memory across sessions (save/load only)
 - No multi-user / server mode
+
+## Setup
+
+```bash
+# Clone and install
+cd live-chat
+pip install -e ".[dev]"
+
+# Install system dependency for TTS
+brew install espeak-ng
+
+# Set API key
+export ANTHROPIC_API_KEY="your-key-here"
+
+# Download wake word models (one-time)
+python -c "import openwakeword; openwakeword.utils.download_models()"
+
+# Run
+live-chat
+```
