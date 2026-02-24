@@ -8,9 +8,9 @@ class AudioOutput:
     def __init__(self, config: Config):
         self._sample_rate = config.tts_sample_rate
 
-    def play(self, audio: np.ndarray):
-        """Play audio array (float32) through speakers."""
-        sd.play(audio, samplerate=self._sample_rate)
+    def play(self, audio: np.ndarray, sample_rate: int | None = None):
+        """Play audio array through speakers."""
+        sd.play(audio, samplerate=sample_rate or self._sample_rate)
 
     def wait(self):
         """Block until playback finishes."""

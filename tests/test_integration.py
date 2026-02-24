@@ -1,17 +1,6 @@
-import sys
-import types
-
-from unittest.mock import MagicMock
-
-# Pre-mock the kokoro module so pipeline.py can import KokoroTTS
-_mock_kokoro = types.ModuleType("kokoro")
-_mock_kokoro.KPipeline = MagicMock()
-sys.modules.setdefault("kokoro", _mock_kokoro)
-
 import pytest
-import asyncio
 import numpy as np
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from live_chat.pipeline import Pipeline, State
 from live_chat.config import Config
@@ -27,7 +16,7 @@ async def test_full_pipeline_wake_to_response():
          patch("live_chat.pipeline.VAD") as mock_vad_cls, \
          patch("live_chat.pipeline.WakeWordDetector") as mock_ww_cls, \
          patch("live_chat.pipeline.WhisperSTT") as mock_stt_cls, \
-         patch("live_chat.pipeline.KokoroTTS") as mock_tts_cls, \
+         patch("live_chat.pipeline.PiperTTS") as mock_tts_cls, \
          patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \
          patch("live_chat.pipeline.Router") as mock_router_cls, \
          patch("live_chat.pipeline.Conversation") as mock_conv_cls:
@@ -67,8 +56,9 @@ async def test_full_pipeline_wake_to_response():
 
         mock_llm.stream = fake_stream
         mock_tts.synthesize.return_value = iter([
-            np.zeros(24000, dtype=np.float32)
+            np.zeros(22050, dtype=np.int16)
         ])
+        mock_tts.sample_rate = 22050
 
         await pipeline._process_chunk(chunk)
 

@@ -11,6 +11,7 @@ def test_wakeword_init():
         detector = WakeWordDetector(Config())
         mock_model_cls.assert_called_once_with(
             wakeword_models=["hey_jarvis"],
+            inference_framework="onnx",
         )
 
 

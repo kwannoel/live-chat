@@ -13,7 +13,7 @@ from live_chat.llm.client import LLMClient
 from live_chat.llm.conversation import Conversation
 from live_chat.llm.router import Router
 from live_chat.stt.whisper import WhisperSTT
-from live_chat.tts.kokoro import KokoroTTS
+from live_chat.tts.piper_tts import PiperTTS
 
 
 class State(enum.Enum):
@@ -35,7 +35,7 @@ class Pipeline:
         self._vad = VAD(config)
         self._wakeword = WakeWordDetector(config)
         self._stt = WhisperSTT(config)
-        self._tts = KokoroTTS(config)
+        self._tts = PiperTTS(config)
         self._llm = LLMClient(config)
         self._router = Router(config)
         self._conversation = Conversation()
@@ -159,5 +159,5 @@ class Pipeline:
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence."""
         for audio_chunk in self._tts.synthesize(sentence):
-            self._audio_out.play(audio_chunk)
+            self._audio_out.play(audio_chunk, sample_rate=self._tts.sample_rate)
             self._audio_out.wait()
