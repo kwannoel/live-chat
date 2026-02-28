@@ -3,8 +3,10 @@ import enum
 
 import numpy as np
 
+from live_chat.audio.gain import AutoGain
 from live_chat.audio.input import AudioInput
 from live_chat.audio.output import AudioOutput
+from live_chat.audio.vad import VAD
 from live_chat.config import Config
 from live_chat.llm.client import LLMClient
 from live_chat.llm.conversation import Conversation
@@ -30,6 +32,8 @@ class Pipeline:
         # Components
         self._audio_in = AudioInput(config)
         self._audio_out = AudioOutput()
+        self._gain = AutoGain()
+        self._vad = VAD()
         self._stt = WhisperSTT(config)
         self._tts = PiperTTS(config)
         self._llm = LLMClient(config)
@@ -42,7 +46,7 @@ class Pipeline:
 
         # Speech buffer for accumulating audio during listening
         self._speech_buffer: list[np.ndarray] = []
-        self._stop_event = asyncio.Event()
+        self._interrupted = False
 
     def on_state_change(self, callback: callable):
         self._on_state_change = callback
@@ -57,13 +61,11 @@ class Pipeline:
             self._on_state_change(state)
 
     def activate(self):
-        """Toggle recording (called from keyboard input)."""
+        """Start continuous listening (called from keyboard input)."""
         if self.state == State.IDLE:
             self._set_state(State.LISTENING)
             self._speech_buffer.clear()
-        elif self.state == State.LISTENING:
-            # Second Enter press stops recording and triggers processing
-            self._stop_event.set()
+            self._vad.reset()
 
     async def run(self):
         """Main loop — process audio chunks from the mic."""
@@ -76,32 +78,42 @@ class Pipeline:
             self._audio_in.stop()
 
     async def _process_chunk(self, chunk: np.ndarray):
+        # Apply auto-gain to get normalized float32
+        normalized = self._gain.apply(chunk)
+
         if self.state == State.IDLE:
-            pass  # waiting for keyboard activation
+            pass
 
         elif self.state == State.LISTENING:
-            self._speech_buffer.append(chunk)
-            if self._stop_event.is_set():
-                self._stop_event.clear()
+            event = self._vad.process(normalized)
+
+            if event and "start" in event:
+                self._speech_buffer = [normalized]
+            elif event and "end" in event:
+                self._speech_buffer.append(normalized)
                 await self._process_speech()
+            elif self._speech_buffer:
+                self._speech_buffer.append(normalized)
 
         elif self.state == State.SPEAKING:
-            pass
+            event = self._vad.process(normalized)
+            if event and "start" in event:
+                self._interrupted = True
+                self._audio_out.stop()
+                self._speech_buffer = [normalized]
+                self._set_state(State.LISTENING)
 
     async def _process_speech(self):
         """Transcribe buffered speech, route, call LLM, speak response."""
         if not self._speech_buffer:
             return
 
-        # Concatenate and convert to float32
         audio = np.concatenate(self._speech_buffer)
-        audio_f32 = audio.astype(np.float32) / 32768.0
         self._speech_buffer.clear()
 
-        # STT
-        text = self._stt.transcribe(audio_f32)
+        # STT (audio is already float32 from AutoGain)
+        text = self._stt.transcribe(audio)
         if not text:
-            self._set_state(State.IDLE)
             return
 
         self._set_state(State.THINKING)
@@ -122,7 +134,6 @@ class Pipeline:
             full_response.append(token)
             sentence_buffer.append(token)
 
-            # Check for sentence boundary
             current = "".join(sentence_buffer)
             if any(current.rstrip().endswith(p) for p in ".!?"):
                 sentence = current.strip()
@@ -130,16 +141,24 @@ class Pipeline:
                     await self._speak_sentence(sentence)
                 sentence_buffer.clear()
 
+            if self._interrupted:
+                self._interrupted = False
+                break
+
         # Speak any remaining text
         remaining = "".join(sentence_buffer).strip()
-        if remaining:
+        if remaining and not self._interrupted:
             await self._speak_sentence(remaining)
 
         response_text = "".join(full_response)
         self._conversation.add_assistant(response_text)
         if self._on_transcript:
             self._on_transcript("assistant", response_text, model)
-        self._set_state(State.IDLE)
+
+        # Return to listening for continuous conversation
+        if self.state == State.SPEAKING:
+            self._set_state(State.LISTENING)
+            self._vad.reset()
 
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence."""

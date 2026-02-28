@@ -7,6 +7,8 @@ from live_chat.config import Config
 def test_pipeline_initial_state():
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.AutoGain"), \
+         patch("live_chat.pipeline.VAD"), \
          patch("live_chat.pipeline.WhisperSTT"), \
          patch("live_chat.pipeline.PiperTTS"), \
          patch("live_chat.pipeline.LLMClient"), \
