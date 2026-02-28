@@ -142,7 +142,9 @@ class Pipeline:
             # Stream LLM response, buffer sentences, speak as they complete
             self._set_state(State.SPEAKING)
             full_response = []
+            spoken_sentences = []
             sentence_buffer = []
+            was_interrupted = False
 
             async for token in self._llm.stream(model, system, messages):
                 full_response.append(token)
@@ -153,18 +155,26 @@ class Pipeline:
                     sentence = current.strip()
                     if sentence:
                         await self._speak_sentence(sentence)
+                        spoken_sentences.append(sentence)
                     sentence_buffer.clear()
 
                 if self._interrupted:
                     self._interrupted = False
+                    was_interrupted = True
                     break
 
             # Speak any remaining text
             remaining = "".join(sentence_buffer).strip()
-            if remaining and not self._interrupted:
+            if remaining and not was_interrupted:
                 await self._speak_sentence(remaining)
+                spoken_sentences.append(remaining)
 
-            response_text = "".join(full_response)
+            if was_interrupted:
+                spoken_text = " ".join(spoken_sentences)
+                response_text = f"{spoken_text} [interrupted by user]" if spoken_text else "[interrupted by user]"
+            else:
+                response_text = "".join(full_response)
+
             self._conversation.add_assistant(response_text)
             if self._on_transcript:
                 self._on_transcript("assistant", response_text, model)
