@@ -121,44 +121,47 @@ class Pipeline:
             self._on_transcript("user", text, None)
         self._conversation.add_user(text)
 
-        # Route
-        model = await self._router.route(text, self._conversation.messages[:-1])
-        system, messages = self._conversation.for_api()
+        try:
+            # Route
+            model = await self._router.route(text, self._conversation.messages[:-1])
+            system, messages = self._conversation.for_api()
 
-        # Stream LLM response, buffer sentences, speak as they complete
-        self._set_state(State.SPEAKING)
-        full_response = []
-        sentence_buffer = []
+            # Stream LLM response, buffer sentences, speak as they complete
+            self._set_state(State.SPEAKING)
+            full_response = []
+            sentence_buffer = []
 
-        async for token in self._llm.stream(model, system, messages):
-            full_response.append(token)
-            sentence_buffer.append(token)
+            async for token in self._llm.stream(model, system, messages):
+                full_response.append(token)
+                sentence_buffer.append(token)
 
-            current = "".join(sentence_buffer)
-            if any(current.rstrip().endswith(p) for p in ".!?"):
-                sentence = current.strip()
-                if sentence:
-                    await self._speak_sentence(sentence)
-                sentence_buffer.clear()
+                current = "".join(sentence_buffer)
+                if any(current.rstrip().endswith(p) for p in ".!?"):
+                    sentence = current.strip()
+                    if sentence:
+                        await self._speak_sentence(sentence)
+                    sentence_buffer.clear()
 
-            if self._interrupted:
-                self._interrupted = False
-                break
+                if self._interrupted:
+                    self._interrupted = False
+                    break
 
-        # Speak any remaining text
-        remaining = "".join(sentence_buffer).strip()
-        if remaining and not self._interrupted:
-            await self._speak_sentence(remaining)
+            # Speak any remaining text
+            remaining = "".join(sentence_buffer).strip()
+            if remaining and not self._interrupted:
+                await self._speak_sentence(remaining)
 
-        response_text = "".join(full_response)
-        self._conversation.add_assistant(response_text)
-        if self._on_transcript:
-            self._on_transcript("assistant", response_text, model)
+            response_text = "".join(full_response)
+            self._conversation.add_assistant(response_text)
+            if self._on_transcript:
+                self._on_transcript("assistant", response_text, model)
+
+        except Exception as e:
+            print(f"  [error] {type(e).__name__}: {e}")
 
         # Return to listening for continuous conversation
-        if self.state == State.SPEAKING:
-            self._set_state(State.LISTENING)
-            self._vad.reset()
+        self._set_state(State.LISTENING)
+        self._vad.reset()
 
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence."""

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from anthropic import AsyncAnthropic
+
 from live_chat.config import Config
 from live_chat.pipeline import Pipeline, State
 
@@ -15,7 +17,8 @@ def _load_dotenv():
         for line in env_file.read_text().splitlines():
             if "=" in line and not line.startswith("#"):
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+                v = v.strip().strip("'\"")
+                os.environ.setdefault(k.strip(), v)
 
 console = Console()
 
@@ -35,6 +38,19 @@ async def run():
     console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
     console.print(f"Deep model: [cyan]{config.deep_model}[/cyan]")
     console.print("Press [bold]Enter[/bold] to start. [bold]Ctrl+C[/bold] to quit.\n")
+
+    # Verify API key before loading heavy models
+    console.print("[dim]Checking API key...[/dim]")
+    try:
+        client = AsyncAnthropic()
+        await client.messages.create(
+            model=config.fast_model,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    except Exception as e:
+        console.print(f"[bold red]API key check failed:[/bold red] {e}")
+        return
 
     console.print("[dim]Loading models...[/dim]")
     pipeline = Pipeline(config)
