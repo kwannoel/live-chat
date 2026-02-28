@@ -3,7 +3,7 @@ import mlx_whisper
 
 from live_chat.config import Config
 
-_DEFAULT_MODEL = "mlx-community/whisper-small-mlx"
+_DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
 
 
 class WhisperSTT:
