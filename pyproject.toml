@@ -1,18 +1,15 @@
 [project]
 name = "live-chat"
-version = "0.1.0"
+version = "1.0.0"
 requires-python = ">=3.10"
 dependencies = [
     "sounddevice>=0.5",
-    "silero-vad>=5.1",
-    "openwakeword>=0.6",
     "mlx-whisper>=0.4",
-    "kokoro>=0.7",
+    "piper-tts>=1.2",
     "anthropic>=0.42",
     "rich>=14.0",
     "pyyaml>=6.0",
     "numpy>=1.26",
-    "soundfile>=0.12",
 ]
 
 [project.optional-dependencies]
