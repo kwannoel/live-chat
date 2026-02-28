@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from unittest.mock import patch
 
@@ -21,3 +22,12 @@ def test_audio_output_stop(mock_sd):
     output = AudioOutput()
     output.stop()
     mock_sd.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("live_chat.audio.output.sd")
+async def test_audio_output_wait_async(mock_sd):
+    """wait_async wraps sd.wait in asyncio.to_thread (non-blocking)."""
+    output = AudioOutput()
+    await output.wait_async()
+    mock_sd.wait.assert_called_once()

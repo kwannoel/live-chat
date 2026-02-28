@@ -45,7 +45,7 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
     chunk_size = 512
 
     with patch("live_chat.pipeline.AudioInput"), \
-         patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
          patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
          patch("live_chat.pipeline.VAD") as mock_vad_cls, \
          patch("live_chat.pipeline.PiperTTS") as mock_tts_cls, \
@@ -53,6 +53,8 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
          patch("live_chat.pipeline.Router") as mock_router_cls, \
          patch("live_chat.pipeline.Conversation") as mock_conv_cls:
 
+        mock_out = mock_out_cls.return_value
+        mock_out.wait_async = AsyncMock()
         mock_gain = mock_gain_cls.return_value
         mock_vad = mock_vad_cls.return_value
         mock_router = mock_router_cls.return_value

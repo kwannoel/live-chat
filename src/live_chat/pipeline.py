@@ -141,7 +141,6 @@ class Pipeline:
 
             # Stream LLM response, buffer sentences, speak as they complete
             self._set_state(State.SPEAKING)
-            self._audio_in.mute()  # stop feeding mic audio during TTS
             full_response = []
             sentence_buffer = []
 
@@ -173,8 +172,6 @@ class Pipeline:
         except Exception as e:
             print(f"  [error] {type(e).__name__}: {e}")
 
-        # Resume mic input and return to listening
-        self._audio_in.unmute()
         self._set_state(State.LISTENING)
         self._vad.reset()
 
@@ -182,4 +179,4 @@ class Pipeline:
         """Synthesize and play a single sentence."""
         for audio_chunk in self._tts.synthesize(sentence):
             self._audio_out.play(audio_chunk, sample_rate=self._tts.sample_rate)
-            self._audio_out.wait()
+            await self._audio_out.wait_async()

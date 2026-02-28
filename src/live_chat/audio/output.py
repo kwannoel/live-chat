@@ -1,3 +1,5 @@
+import asyncio
+
 import numpy as np
 import sounddevice as sd
 
@@ -10,6 +12,10 @@ class AudioOutput:
     def wait(self):
         """Block until playback finishes."""
         sd.wait()
+
+    async def wait_async(self):
+        """Wait for playback to finish without blocking the event loop."""
+        await asyncio.to_thread(sd.wait)
 
     def stop(self):
         """Stop any current playback immediately."""
