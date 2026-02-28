@@ -4,12 +4,13 @@ from silero_vad import VADIterator, load_silero_vad
 
 
 class VAD:
-    def __init__(self, threshold: float = 0.5):
+    def __init__(self, threshold: float = 0.5, min_silence_ms: int = 800):
         self._model = load_silero_vad()
         self._iterator = VADIterator(
             self._model,
             sampling_rate=16000,
             threshold=threshold,
+            min_silence_duration_ms=min_silence_ms,
         )
 
     def process(self, chunk: np.ndarray) -> dict | None:
