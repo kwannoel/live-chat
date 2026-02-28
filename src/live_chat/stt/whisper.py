@@ -3,7 +3,7 @@ import mlx_whisper
 
 from live_chat.config import Config
 
-_DEFAULT_MODEL = "mlx-community/whisper-small"
+_DEFAULT_MODEL = "mlx-community/whisper-small-mlx"
 
 
 class WhisperSTT:
@@ -15,5 +15,6 @@ class WhisperSTT:
         result = mlx_whisper.transcribe(
             audio,
             path_or_hf_repo=self._model_path,
+            language="en",
         )
         return result["text"].strip()

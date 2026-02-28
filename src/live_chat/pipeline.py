@@ -7,7 +7,6 @@ import numpy as np
 from live_chat.audio.input import AudioInput
 from live_chat.audio.output import AudioOutput
 from live_chat.audio.vad import VAD
-from live_chat.audio.wakeword import WakeWordDetector
 from live_chat.config import Config
 from live_chat.llm.client import LLMClient
 from live_chat.llm.conversation import Conversation
@@ -17,7 +16,7 @@ from live_chat.tts.piper_tts import PiperTTS
 
 
 class State(enum.Enum):
-    WAITING_FOR_WAKE_WORD = "waiting"
+    IDLE = "idle"
     LISTENING = "listening"
     THINKING = "thinking"
     SPEAKING = "speaking"
@@ -26,14 +25,14 @@ class State(enum.Enum):
 class Pipeline:
     def __init__(self, config: Config):
         self.config = config
-        self.state = State.WAITING_FOR_WAKE_WORD
+        self.state = State.IDLE
         self._on_state_change: callable = None
+        self._on_transcript: callable = None
 
         # Components
         self._audio_in = AudioInput(config)
         self._audio_out = AudioOutput(config)
         self._vad = VAD(config)
-        self._wakeword = WakeWordDetector(config)
         self._stt = WhisperSTT(config)
         self._tts = PiperTTS(config)
         self._llm = LLMClient(config)
@@ -48,17 +47,32 @@ class Pipeline:
         self._speech_buffer: list[np.ndarray] = []
         self._last_speech_time: float = 0
         self._interrupted = False
+        self._stop_event = asyncio.Event()
 
     def on_state_change(self, callback: callable):
         self._on_state_change = callback
+
+    def on_transcript(self, callback: callable):
+        """callback(role, text, model) — called for user/assistant transcripts."""
+        self._on_transcript = callback
 
     def _set_state(self, state: State):
         self.state = state
         if self._on_state_change:
             self._on_state_change(state)
 
+    def activate(self):
+        """Toggle recording (called from keyboard input)."""
+        if self.state == State.IDLE:
+            self._set_state(State.LISTENING)
+            self._speech_buffer.clear()
+            self._last_speech_time = time.monotonic()
+        elif self.state == State.LISTENING:
+            # Second Enter press stops recording and triggers processing
+            self._stop_event.set()
+
     async def run(self):
-        """Main loop -- process audio chunks from the mic."""
+        """Main loop — process audio chunks from the mic."""
         self._audio_in.start()
         try:
             while True:
@@ -68,40 +82,17 @@ class Pipeline:
             self._audio_in.stop()
 
     async def _process_chunk(self, chunk: np.ndarray):
-        if self.state == State.WAITING_FOR_WAKE_WORD:
-            if self._wakeword.detect(chunk):
-                self._set_state(State.LISTENING)
-                self._speech_buffer.clear()
-                self._last_speech_time = time.monotonic()
-                self._vad.reset()
+        if self.state == State.IDLE:
+            pass  # waiting for keyboard activation
 
         elif self.state == State.LISTENING:
-            event = self._vad.process(chunk)
-
-            if event and "start" in event:
-                self._last_speech_time = time.monotonic()
-                self._speech_buffer.append(chunk)
-            elif event and "end" in event:
-                self._speech_buffer.append(chunk)
+            self._speech_buffer.append(chunk)
+            if self._stop_event.is_set():
+                self._stop_event.clear()
                 await self._process_speech()
-            elif self._speech_buffer:
-                # Mid-speech, keep buffering
-                self._speech_buffer.append(chunk)
-                self._last_speech_time = time.monotonic()
-            else:
-                # Silence, check timeout
-                elapsed = time.monotonic() - self._last_speech_time
-                if elapsed > self.config.active_timeout_s:
-                    self._set_state(State.WAITING_FOR_WAKE_WORD)
 
         elif self.state == State.SPEAKING:
-            # Check for interruption via VAD
-            event = self._vad.process(chunk)
-            if event and "start" in event:
-                self._interrupted = True
-                self._audio_out.stop()
-                self._speech_buffer = [chunk]
-                self._set_state(State.LISTENING)
+            pass
 
     async def _process_speech(self):
         """Transcribe buffered speech, route, call LLM, speak response."""
@@ -120,6 +111,8 @@ class Pipeline:
             return
 
         self._set_state(State.THINKING)
+        if self._on_transcript:
+            self._on_transcript("user", text, None)
         self._conversation.add_user(text)
 
         # Route
@@ -152,7 +145,10 @@ class Pipeline:
         if remaining and not self._interrupted:
             await self._speak_sentence(remaining)
 
-        self._conversation.add_assistant("".join(full_response))
+        response_text = "".join(full_response)
+        self._conversation.add_assistant(response_text)
+        if self._on_transcript:
+            self._on_transcript("assistant", response_text, model)
         self._set_state(State.LISTENING)
         self._last_speech_time = time.monotonic()
 

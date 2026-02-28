@@ -8,18 +8,17 @@ def test_pipeline_initial_state():
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput"), \
          patch("live_chat.pipeline.VAD"), \
-         patch("live_chat.pipeline.WakeWordDetector"), \
          patch("live_chat.pipeline.WhisperSTT"), \
          patch("live_chat.pipeline.PiperTTS"), \
          patch("live_chat.pipeline.LLMClient"), \
          patch("live_chat.pipeline.Router"), \
          patch("live_chat.pipeline.Conversation"):
         pipeline = Pipeline(Config())
-        assert pipeline.state == State.WAITING_FOR_WAKE_WORD
+        assert pipeline.state == State.IDLE
 
 
 def test_pipeline_state_enum():
-    assert State.WAITING_FOR_WAKE_WORD.value == "waiting"
+    assert State.IDLE.value == "idle"
     assert State.LISTENING.value == "listening"
     assert State.THINKING.value == "thinking"
     assert State.SPEAKING.value == "speaking"

@@ -15,7 +15,7 @@ class Config:
     tts_speed: float = 1.0
     sample_rate: int = 16000
     tts_sample_rate: int = 24000
-    wakeword_threshold: float = 0.5
+    wakeword_threshold: float = 0.08
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":

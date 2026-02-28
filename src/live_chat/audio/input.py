@@ -10,7 +10,7 @@ class AudioInput:
     def __init__(self, config: Config):
         self.sample_rate = config.sample_rate
         self.channels = 1
-        self.blocksize = 1280  # 80ms at 16kHz, good for openwakeword
+        self.blocksize = 512  # 32ms at 16kHz, required by Silero VAD
         self._queue: asyncio.Queue[np.ndarray] | None = None
         self._stream: sd.InputStream | None = None
 
@@ -21,7 +21,10 @@ class AudioInput:
         if status:
             print(f"Audio input status: {status}")
         if self._queue is not None:
-            self._queue.put_nowait(indata[:, 0].copy())
+            raw = indata[:, 0].copy()
+            # Boost quiet MacBook mic to usable levels for VAD/STT
+            amplified = np.clip(raw.astype(np.int32) * 10, -32768, 32767).astype(np.int16)
+            self._queue.put_nowait(amplified)
 
     def start(self):
         self._stream = sd.InputStream(
