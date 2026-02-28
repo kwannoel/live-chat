@@ -6,13 +6,10 @@ from piper.voice import PiperVoice
 
 from live_chat.config import Config
 
-_DEFAULT_MODEL = "en_US-lessac-medium"
-
-
 class PiperTTS:
     def __init__(self, config: Config):
         self._voice: PiperVoice | None = None
-        self._model_name = _DEFAULT_MODEL
+        self._model_name = config.tts_voice
         self._sample_rate: int = 22050
 
     def _ensure_model(self):
@@ -25,8 +22,9 @@ class PiperTTS:
 
         if not model_path.exists():
             raise FileNotFoundError(
-                f"Piper voice model not found at {model_path}. "
-                f"Download it from https://huggingface.co/rhasspy/piper-voices"
+                f"Piper voice model not found: {model_path}\n"
+                f"Download voices from: https://huggingface.co/rhasspy/piper-voices\n"
+                f"Place the .onnx and .onnx.json files in: {model_dir}"
             )
 
         self._voice = PiperVoice.load(str(model_path))

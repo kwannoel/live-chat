@@ -36,6 +36,7 @@ async def run():
     console.print("[bold]Live Chat[/bold] — voice-first agent")
     console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
     console.print(f"Deep model: [cyan]{config.deep_model}[/cyan]")
+    console.print(f"TTS voice:  [cyan]{config.tts_voice}[/cyan]")
     console.print("[bold]Ctrl+C[/bold] to quit.\n")
 
     # Verify API key before loading heavy models
