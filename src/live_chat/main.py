@@ -1,7 +1,5 @@
 import asyncio
 import os
-import select
-import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -24,7 +22,7 @@ def _load_dotenv():
 console = Console()
 
 _STATE_DISPLAY = {
-    State.IDLE: "[dim]Press Enter to start...[/dim]",
+    State.IDLE: "[dim]Idle[/dim]",
     State.LISTENING: "[bold green]Listening...[/bold green]",
     State.THINKING: "[bold yellow]Thinking...[/bold yellow]",
     State.SPEAKING: "[bold blue]Speaking...[/bold blue]",
@@ -38,7 +36,7 @@ async def run():
     console.print("[bold]Live Chat[/bold] — voice-first agent")
     console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
     console.print(f"Deep model: [cyan]{config.deep_model}[/cyan]")
-    console.print("Press [bold]Enter[/bold] to start. [bold]Ctrl+C[/bold] to quit.\n")
+    console.print("[bold]Ctrl+C[/bold] to quit.\n")
 
     # Verify API key before loading heavy models
     console.print("[dim]Checking API key...[/dim]")
@@ -72,26 +70,15 @@ async def run():
 
     # Run pipeline audio loop in background
     audio_task = asyncio.create_task(pipeline.run())
+    pipeline.activate()
 
-    # Drain any buffered stdin (e.g. Enter pressed during startup)
-    while select.select([sys.stdin], [], [], 0)[0]:
-        sys.stdin.readline()
-
-    # Keyboard input loop
-    loop = asyncio.get_event_loop()
+    # Wait until interrupted
     try:
-        while True:
-            # Wait for Enter key (non-blocking via executor)
-            await loop.run_in_executor(None, sys.stdin.readline)
-            pipeline.activate()
-    except (KeyboardInterrupt, EOFError):
-        console.print("\n[dim]Goodbye.[/dim]")
+        await audio_task
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
     finally:
-        audio_task.cancel()
-        try:
-            await audio_task
-        except asyncio.CancelledError:
-            pass
+        console.print("\n[dim]Goodbye.[/dim]")
 
 
 def main():

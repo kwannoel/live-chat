@@ -7,7 +7,7 @@ import yaml
 @dataclass
 class Config:
     fast_model: str = "claude-haiku-4-5-20251001"
-    deep_model: str = "claude-sonnet-4-5-20241022"
+    deep_model: str = "claude-sonnet-4-6"
     sample_rate: int = 16000
 
     @classmethod
