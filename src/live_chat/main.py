@@ -20,8 +20,8 @@ def _load_dotenv():
 console = Console()
 
 _STATE_DISPLAY = {
-    State.IDLE: "[dim]Press Enter to start recording...[/dim]",
-    State.LISTENING: "[bold green]Recording... (press Enter to stop)[/bold green]",
+    State.IDLE: "[dim]Press Enter to start...[/dim]",
+    State.LISTENING: "[bold green]Listening...[/bold green]",
     State.THINKING: "[bold yellow]Thinking...[/bold yellow]",
     State.SPEAKING: "[bold blue]Speaking...[/bold blue]",
 }
@@ -34,7 +34,7 @@ async def run():
     console.print("[bold]Live Chat[/bold] — voice-first agent")
     console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
     console.print(f"Deep model: [cyan]{config.deep_model}[/cyan]")
-    console.print("Press [bold]Enter[/bold] to start recording, [bold]Enter[/bold] again to stop. [bold]Ctrl+C[/bold] to quit.\n")
+    console.print("Press [bold]Enter[/bold] to start. [bold]Ctrl+C[/bold] to quit.\n")
 
     console.print("[dim]Loading models...[/dim]")
     pipeline = Pipeline(config)

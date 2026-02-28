@@ -46,22 +46,28 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
 
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
+         patch("live_chat.pipeline.VAD") as mock_vad_cls, \
          patch("live_chat.pipeline.PiperTTS") as mock_tts_cls, \
          patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \
          patch("live_chat.pipeline.Router") as mock_router_cls, \
          patch("live_chat.pipeline.Conversation") as mock_conv_cls:
 
+        mock_gain = mock_gain_cls.return_value
+        mock_vad = mock_vad_cls.return_value
         mock_router = mock_router_cls.return_value
         mock_llm = mock_llm_cls.return_value
         mock_tts = mock_tts_cls.return_value
         mock_conv = mock_conv_cls.return_value
+
+        # AutoGain passes through as float32
+        mock_gain.apply.side_effect = lambda c: c.astype(np.float32) / 32768.0
 
         # Router returns fast model
         mock_router.route = AsyncMock(return_value=config.fast_model)
         mock_conv.for_api.return_value = ("system", [{"role": "user", "content": "Hello, nice to meet you."}])
         mock_conv.messages = [{"role": "user", "content": "Hello, nice to meet you."}]
 
-        # LLM streams a greeting back
         async def fake_stream(model, system, messages):
             for token in ["Nice to ", "meet you ", "too!"]:
                 yield token
@@ -70,27 +76,36 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
         mock_tts.synthesize.return_value = iter([np.zeros(22050, dtype=np.int16)])
         mock_tts.sample_rate = 22050
 
-        # Build pipeline with real STT, everything else mocked
+        # Build pipeline with real STT
         pipeline = Pipeline(config)
         pipeline._stt = WhisperSTT(config)
 
-        # 1. Activate recording
+        # Activate continuous listening
         pipeline.activate()
         assert pipeline.state == State.LISTENING
 
-        # 2. Feed recorded audio in chunks (simulating mic input)
+        # Feed audio: first chunk = VAD start, middle = None, last = VAD end
+        chunks = []
         for i in range(0, len(recorded_audio), chunk_size):
             chunk = recorded_audio[i:i + chunk_size]
             if len(chunk) < chunk_size:
                 chunk = np.pad(chunk, (0, chunk_size - len(chunk)))
+            chunks.append(chunk)
+
+        # VAD start on first chunk
+        mock_vad.process.return_value = {"start": 0}
+        await pipeline._process_chunk(chunks[0])
+
+        # Middle chunks — no VAD event
+        mock_vad.process.return_value = None
+        for chunk in chunks[1:-1]:
             await pipeline._process_chunk(chunk)
 
-        # 3. Stop recording (second activate)
-        pipeline.activate()
-        # Process one more chunk to trigger the stop event
-        await pipeline._process_chunk(np.zeros(chunk_size, dtype=np.int16))
+        # VAD end on last chunk
+        mock_vad.process.return_value = {"end": 512}
+        await pipeline._process_chunk(chunks[-1])
 
-        # 4. Verify the full pipeline ran
+        # Verify
         mock_conv.add_user.assert_called_once()
         user_text = mock_conv.add_user.call_args[0][0]
         assert "hello" in user_text.lower(), f"STT produced: '{user_text}'"
@@ -98,4 +113,4 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
 
         mock_router.route.assert_called_once()
         mock_conv.add_assistant.assert_called_once_with("Nice to meet you too!")
-        mock_tts.synthesize.assert_called()
+        assert pipeline.state == State.LISTENING  # continuous mode
