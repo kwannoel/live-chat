@@ -6,16 +6,9 @@ import yaml
 
 @dataclass
 class Config:
-    wake_word: str = "hey_jarvis"
-    vad_silence_ms: int = 700
-    active_timeout_s: int = 30
     fast_model: str = "claude-haiku-4-5-20241022"
     deep_model: str = "claude-sonnet-4-5-20250929"
-    tts_voice: str = "af_heart"
-    tts_speed: float = 1.0
     sample_rate: int = 16000
-    tts_sample_rate: int = 24000
-    wakeword_threshold: float = 0.08
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":

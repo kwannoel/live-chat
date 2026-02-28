@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 
 from live_chat.pipeline import Pipeline, State
 from live_chat.config import Config
@@ -11,9 +11,8 @@ async def test_full_pipeline_activate_to_response():
     """Simulate: activate -> record -> stop -> STT -> route -> LLM -> TTS -> done."""
     config = Config()
 
-    with patch("live_chat.pipeline.AudioInput") as mock_ai, \
-         patch("live_chat.pipeline.AudioOutput") as mock_ao, \
-         patch("live_chat.pipeline.VAD") as mock_vad_cls, \
+    with patch("live_chat.pipeline.AudioInput"), \
+         patch("live_chat.pipeline.AudioOutput"), \
          patch("live_chat.pipeline.WhisperSTT") as mock_stt_cls, \
          patch("live_chat.pipeline.PiperTTS") as mock_tts_cls, \
          patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \

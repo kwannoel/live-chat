@@ -10,7 +10,7 @@ Uses a pre-recorded fixture of "Hello, nice to meet you" to verify:
 import pytest
 import numpy as np
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 
 from live_chat.config import Config
 from live_chat.pipeline import Pipeline, State
@@ -44,9 +44,8 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
     config = Config()
     chunk_size = 512
 
-    with patch("live_chat.pipeline.AudioInput") as mock_ai, \
-         patch("live_chat.pipeline.AudioOutput") as mock_ao, \
-         patch("live_chat.pipeline.VAD"), \
+    with patch("live_chat.pipeline.AudioInput"), \
+         patch("live_chat.pipeline.AudioOutput"), \
          patch("live_chat.pipeline.PiperTTS") as mock_tts_cls, \
          patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \
          patch("live_chat.pipeline.Router") as mock_router_cls, \
@@ -71,11 +70,9 @@ async def test_e2e_recorded_audio_through_pipeline(recorded_audio):
         mock_tts.synthesize.return_value = iter([np.zeros(22050, dtype=np.int16)])
         mock_tts.sample_rate = 22050
 
-        # Build pipeline (real STT, everything else mocked)
-        with patch("live_chat.pipeline.WhisperSTT", wraps=WhisperSTT) as real_stt:
-            pipeline = Pipeline(config)
-            # Replace the mocked STT with the real one
-            pipeline._stt = WhisperSTT(config)
+        # Build pipeline with real STT, everything else mocked
+        pipeline = Pipeline(config)
+        pipeline._stt = WhisperSTT(config)
 
         # 1. Activate recording
         pipeline.activate()

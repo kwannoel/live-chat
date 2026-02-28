@@ -1,12 +1,10 @@
 import asyncio
 import enum
-import time
 
 import numpy as np
 
 from live_chat.audio.input import AudioInput
 from live_chat.audio.output import AudioOutput
-from live_chat.audio.vad import VAD
 from live_chat.config import Config
 from live_chat.llm.client import LLMClient
 from live_chat.llm.conversation import Conversation
@@ -31,8 +29,7 @@ class Pipeline:
 
         # Components
         self._audio_in = AudioInput(config)
-        self._audio_out = AudioOutput(config)
-        self._vad = VAD(config)
+        self._audio_out = AudioOutput()
         self._stt = WhisperSTT(config)
         self._tts = PiperTTS(config)
         self._llm = LLMClient(config)
@@ -45,8 +42,6 @@ class Pipeline:
 
         # Speech buffer for accumulating audio during listening
         self._speech_buffer: list[np.ndarray] = []
-        self._last_speech_time: float = 0
-        self._interrupted = False
         self._stop_event = asyncio.Event()
 
     def on_state_change(self, callback: callable):
@@ -66,7 +61,6 @@ class Pipeline:
         if self.state == State.IDLE:
             self._set_state(State.LISTENING)
             self._speech_buffer.clear()
-            self._last_speech_time = time.monotonic()
         elif self.state == State.LISTENING:
             # Second Enter press stops recording and triggers processing
             self._stop_event.set()
@@ -107,7 +101,7 @@ class Pipeline:
         # STT
         text = self._stt.transcribe(audio_f32)
         if not text:
-            self._last_speech_time = time.monotonic()
+            self._set_state(State.IDLE)
             return
 
         self._set_state(State.THINKING)
@@ -136,21 +130,16 @@ class Pipeline:
                     await self._speak_sentence(sentence)
                 sentence_buffer.clear()
 
-            if self._interrupted:
-                self._interrupted = False
-                break
-
         # Speak any remaining text
         remaining = "".join(sentence_buffer).strip()
-        if remaining and not self._interrupted:
+        if remaining:
             await self._speak_sentence(remaining)
 
         response_text = "".join(full_response)
         self._conversation.add_assistant(response_text)
         if self._on_transcript:
             self._on_transcript("assistant", response_text, model)
-        self._set_state(State.LISTENING)
-        self._last_speech_time = time.monotonic()
+        self._set_state(State.IDLE)
 
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence."""
