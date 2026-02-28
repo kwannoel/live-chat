@@ -99,13 +99,20 @@ class Pipeline:
         elif self.state == State.SPEAKING:
             event = self._vad.process(normalized)
             if event and "start" in event:
-                self._interrupted = True
-                self._audio_out.stop()
-                self._speech_buffer = [normalized]
-                self._set_state(State.LISTENING)
+                # Only trigger barge-in if raw audio energy is high enough
+                # to be direct speech, not speaker echo picked up by mic.
+                raw_rms = float(np.sqrt(np.mean((chunk.astype(np.float32) / 32768.0) ** 2)))
+                if raw_rms > self._BARGE_IN_RMS_THRESHOLD:
+                    self._interrupted = True
+                    self._audio_out.stop()
+                    self._speech_buffer = [normalized]
+                    self._set_state(State.LISTENING)
 
     # Minimum speech duration to avoid noise triggering STT (0.3s at 16kHz)
     _MIN_SPEECH_SAMPLES = 4800
+    # Raw RMS threshold for barge-in — must be loud enough to be direct speech,
+    # not speaker echo picked up by the mic (echo is typically much quieter)
+    _BARGE_IN_RMS_THRESHOLD = 0.03
 
     async def _process_speech(self):
         """Transcribe buffered speech, route, call LLM, speak response."""
