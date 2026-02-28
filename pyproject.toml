@@ -10,6 +10,8 @@ dependencies = [
     "rich>=14.0",
     "pyyaml>=6.0",
     "numpy>=1.26",
+    "silero-vad>=5.1",
+    "torch>=2.0",
 ]
 
 [project.optional-dependencies]
