@@ -21,10 +21,7 @@ class AudioInput:
         if status:
             print(f"Audio input status: {status}")
         if self._queue is not None:
-            raw = indata[:, 0].copy()
-            # Boost quiet MacBook mic to usable levels for VAD/STT
-            amplified = np.clip(raw.astype(np.int32) * 10, -32768, 32767).astype(np.int16)
-            self._queue.put_nowait(amplified)
+            self._queue.put_nowait(indata[:, 0].copy())
 
     def start(self):
         self._stream = sd.InputStream(

@@ -15,17 +15,19 @@ def test_audio_input_init():
 
 
 @patch("live_chat.audio.input.sd")
-def test_audio_input_callback_puts_to_queue(mock_sd):
+def test_audio_input_callback_puts_raw_audio_to_queue(mock_sd):
     config = Config()
     audio_input = AudioInput(config)
     queue = asyncio.Queue()
     audio_input.set_queue(queue)
 
     # Simulate a callback with audio data
-    fake_audio = np.zeros((512, 1), dtype=np.int16)
+    fake_audio = np.ones((512, 1), dtype=np.int16) * 100
     audio_input._callback(fake_audio, 512, None, None)
 
     assert not queue.empty()
     chunk = queue.get_nowait()
     assert chunk.shape == (512,)
     assert chunk.dtype == np.int16
+    # Raw audio — no gain applied
+    assert np.all(chunk == 100)
