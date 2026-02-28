@@ -39,15 +39,19 @@ async def test_full_pipeline_vad_to_response():
         pipeline.activate()
         assert pipeline.state == State.LISTENING
 
+        # Use audio with enough energy to pass noise filters
+        # (min 4800 samples, rms > 0.02 after gain)
+        speech_chunk = (np.random.randn(512) * 5000).astype(np.int16)
+
         # 2. VAD detects speech start
-        chunk = np.zeros(512, dtype=np.int16)
         mock_vad.process.return_value = {"start": 0}
-        await pipeline._process_chunk(chunk)
+        await pipeline._process_chunk(speech_chunk)
         # Should be buffering now
 
-        # 3. Mid-speech chunks (no event)
+        # 3. Mid-speech chunks (no event) — feed enough to exceed min duration
         mock_vad.process.return_value = None
-        await pipeline._process_chunk(chunk)
+        for _ in range(10):
+            await pipeline._process_chunk(speech_chunk)
 
         # 4. VAD detects speech end
         mock_vad.process.return_value = {"end": 512}
@@ -64,7 +68,7 @@ async def test_full_pipeline_vad_to_response():
         mock_tts.synthesize.return_value = iter([np.zeros(22050, dtype=np.int16)])
         mock_tts.sample_rate = 22050
 
-        await pipeline._process_chunk(chunk)
+        await pipeline._process_chunk(speech_chunk)
 
         # Verify full pipeline executed
         mock_stt.transcribe.assert_called_once()

@@ -69,6 +69,7 @@ class Pipeline:
 
     async def run(self):
         """Main loop — process audio chunks from the mic."""
+        self._audio_in.set_loop(asyncio.get_event_loop())
         self._audio_in.start()
         try:
             while True:
@@ -103,6 +104,9 @@ class Pipeline:
                 self._speech_buffer = [normalized]
                 self._set_state(State.LISTENING)
 
+    # Minimum speech duration to avoid noise triggering STT (0.3s at 16kHz)
+    _MIN_SPEECH_SAMPLES = 4800
+
     async def _process_speech(self):
         """Transcribe buffered speech, route, call LLM, speak response."""
         if not self._speech_buffer:
@@ -110,6 +114,15 @@ class Pipeline:
 
         audio = np.concatenate(self._speech_buffer)
         self._speech_buffer.clear()
+
+        # Skip very short segments (likely noise, not speech)
+        if len(audio) < self._MIN_SPEECH_SAMPLES:
+            return
+
+        # Skip low-energy segments (AutoGain amplifies noise too)
+        rms = float(np.sqrt(np.mean(audio ** 2)))
+        if rms < 0.02:
+            return
 
         # STT (audio is already float32 from AutoGain)
         text = self._stt.transcribe(audio)
@@ -128,6 +141,7 @@ class Pipeline:
 
             # Stream LLM response, buffer sentences, speak as they complete
             self._set_state(State.SPEAKING)
+            self._audio_in.mute()  # stop feeding mic audio during TTS
             full_response = []
             sentence_buffer = []
 
@@ -159,7 +173,8 @@ class Pipeline:
         except Exception as e:
             print(f"  [error] {type(e).__name__}: {e}")
 
-        # Return to listening for continuous conversation
+        # Resume mic input and return to listening
+        self._audio_in.unmute()
         self._set_state(State.LISTENING)
         self._vad.reset()
 

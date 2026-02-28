@@ -1,5 +1,6 @@
 import asyncio
 import os
+import select
 import sys
 from pathlib import Path
 
@@ -71,6 +72,10 @@ async def run():
 
     # Run pipeline audio loop in background
     audio_task = asyncio.create_task(pipeline.run())
+
+    # Drain any buffered stdin (e.g. Enter pressed during startup)
+    while select.select([sys.stdin], [], [], 0)[0]:
+        sys.stdin.readline()
 
     # Keyboard input loop
     loop = asyncio.get_event_loop()

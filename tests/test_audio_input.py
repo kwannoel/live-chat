@@ -1,6 +1,6 @@
 import asyncio
 import numpy as np
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from live_chat.audio.input import AudioInput
 from live_chat.config import Config
@@ -21,6 +21,11 @@ def test_audio_input_callback_puts_raw_audio_to_queue(mock_sd):
     queue = asyncio.Queue()
     audio_input.set_queue(queue)
 
+    # call_soon_threadsafe requires a loop — use a mock that calls the function directly
+    mock_loop = MagicMock()
+    mock_loop.call_soon_threadsafe.side_effect = lambda fn, *args: fn(*args)
+    audio_input.set_loop(mock_loop)
+
     # Simulate a callback with audio data
     fake_audio = np.ones((512, 1), dtype=np.int16) * 100
     audio_input._callback(fake_audio, 512, None, None)
@@ -31,3 +36,25 @@ def test_audio_input_callback_puts_raw_audio_to_queue(mock_sd):
     assert chunk.dtype == np.int16
     # Raw audio — no gain applied
     assert np.all(chunk == 100)
+
+
+@patch("live_chat.audio.input.sd")
+def test_audio_input_mute_blocks_callback(mock_sd):
+    config = Config()
+    audio_input = AudioInput(config)
+    queue = asyncio.Queue()
+    audio_input.set_queue(queue)
+
+    mock_loop = MagicMock()
+    mock_loop.call_soon_threadsafe.side_effect = lambda fn, *args: fn(*args)
+    audio_input.set_loop(mock_loop)
+
+    audio_input.mute()
+    fake_audio = np.ones((512, 1), dtype=np.int16) * 100
+    audio_input._callback(fake_audio, 512, None, None)
+
+    assert queue.empty()
+
+    audio_input.unmute()
+    audio_input._callback(fake_audio, 512, None, None)
+    assert not queue.empty()
