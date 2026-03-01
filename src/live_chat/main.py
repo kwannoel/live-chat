@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import os
 from pathlib import Path
@@ -29,9 +30,10 @@ _STATE_DISPLAY = {
 }
 
 
-async def run():
+async def run(config_path: str | None = None):
     _load_dotenv()
-    config = Config.load()
+    path = Path(config_path) if config_path else None
+    config = Config.load(path)
 
     console.print("[bold]Live Chat[/bold] — voice-first agent")
     console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
@@ -83,8 +85,13 @@ async def run():
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Live Chat — voice-first agent")
+    parser.add_argument("--config", type=str, default=None,
+                        help="Path to config YAML file")
+    args = parser.parse_args()
+
     try:
-        asyncio.run(run())
+        asyncio.run(run(config_path=args.config))
     except KeyboardInterrupt:
         pass
 
