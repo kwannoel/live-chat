@@ -10,6 +10,8 @@ class Config:
     deep_model: str = "claude-sonnet-4-6"
     sample_rate: int = 16000
     tts_voice: str = "en_US-lessac-medium"
+    persona: str | None = None
+    auto_speak: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
