@@ -9,7 +9,6 @@ from live_chat.config import Config
 def test_pipeline_initial_state():
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput"), \
-         patch("live_chat.pipeline.EchoCanceller"), \
          patch("live_chat.pipeline.AutoGain"), \
          patch("live_chat.pipeline.VAD"), \
          patch("live_chat.pipeline.WhisperSTT"), \
@@ -34,7 +33,6 @@ async def test_speak_sentence_uses_async_wait():
     config = Config()
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
-         patch("live_chat.pipeline.EchoCanceller"), \
          patch("live_chat.pipeline.AutoGain"), \
          patch("live_chat.pipeline.VAD"), \
          patch("live_chat.pipeline.WhisperSTT"), \
@@ -55,35 +53,3 @@ async def test_speak_sentence_uses_async_wait():
         mock_out.play.assert_called_once()
         mock_out.wait_async.assert_called_once()
         mock_out.wait.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_barge_in_during_speaking():
-    """VAD speech detection during SPEAKING stops playback and switches to LISTENING."""
-    config = Config()
-    with patch("live_chat.pipeline.AudioInput"), \
-         patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
-         patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
-         patch("live_chat.pipeline.VAD") as mock_vad_cls, \
-         patch("live_chat.pipeline.WhisperSTT"), \
-         patch("live_chat.pipeline.PiperTTS"), \
-         patch("live_chat.pipeline.LLMClient"), \
-         patch("live_chat.pipeline.Router"), \
-         patch("live_chat.pipeline.Conversation"):
-
-        mock_out = mock_out_cls.return_value
-        mock_gain = mock_gain_cls.return_value
-        mock_vad = mock_vad_cls.return_value
-        mock_gain.apply.side_effect = lambda c: c.astype(np.float32) / 32768.0
-
-        pipeline = Pipeline(config)
-        pipeline._set_state(State.SPEAKING)
-
-        speech_chunk = (np.random.randn(512) * 5000).astype(np.int16)
-        mock_vad.process.return_value = {"start": 0}
-        await pipeline._process_chunk(speech_chunk)
-
-        mock_out.stop.assert_called_once()
-        assert pipeline._interrupted is True
-        assert pipeline.state == State.LISTENING
-        assert len(pipeline._speech_buffer) == 1

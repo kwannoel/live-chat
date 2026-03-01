@@ -11,9 +11,8 @@ async def test_full_pipeline_vad_to_response():
     """Simulate: activate -> VAD speech -> STT -> route -> LLM -> TTS -> listening."""
     config = Config()
 
-    with patch("live_chat.pipeline.AudioInput"), \
+    with patch("live_chat.pipeline.AudioInput") as mock_in_cls, \
          patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
-         patch("live_chat.pipeline.EchoCanceller") as mock_aec_cls, \
          patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
          patch("live_chat.pipeline.VAD") as mock_vad_cls, \
          patch("live_chat.pipeline.WhisperSTT") as mock_stt_cls, \
@@ -22,6 +21,7 @@ async def test_full_pipeline_vad_to_response():
          patch("live_chat.pipeline.Router") as mock_router_cls, \
          patch("live_chat.pipeline.Conversation") as mock_conv_cls:
 
+        mock_in = mock_in_cls.return_value
         mock_out = mock_out_cls.return_value
         mock_out.wait_async = AsyncMock()
         mock_gain = mock_gain_cls.return_value
@@ -31,8 +31,6 @@ async def test_full_pipeline_vad_to_response():
         mock_llm = mock_llm_cls.return_value
         mock_router = mock_router_cls.return_value
         mock_conv = mock_conv_cls.return_value
-        mock_aec = mock_aec_cls.return_value
-        mock_aec.cancel.side_effect = lambda c: c
 
         # AutoGain passes through as float32
         mock_gain.apply.side_effect = lambda c: c.astype(np.float32) / 32768.0
@@ -40,20 +38,17 @@ async def test_full_pipeline_vad_to_response():
         pipeline = Pipeline(config)
         assert pipeline.state == State.IDLE
 
-        # 1. Activate via Enter
+        # 1. Activate
         pipeline.activate()
         assert pipeline.state == State.LISTENING
 
-        # Use audio with enough energy to pass noise filters
-        # (min 4800 samples, rms > 0.02 after gain)
         speech_chunk = (np.random.randn(512) * 5000).astype(np.int16)
 
         # 2. VAD detects speech start
         mock_vad.process.return_value = {"start": 0}
         await pipeline._process_chunk(speech_chunk)
-        # Should be buffering now
 
-        # 3. Mid-speech chunks (no event) — feed enough to exceed min duration
+        # 3. Mid-speech chunks — feed enough to exceed min duration
         mock_vad.process.return_value = None
         for _ in range(16):
             await pipeline._process_chunk(speech_chunk)
@@ -81,81 +76,9 @@ async def test_full_pipeline_vad_to_response():
         mock_conv.add_user.assert_called_with("What is consciousness?")
         mock_conv.add_assistant.assert_called_once()
 
-        # Should return to LISTENING (not IDLE) for continuous conversation
+        # Mic should be muted during TTS then unmuted
+        mock_in.mute.assert_called_once()
+        mock_in.unmute.assert_called_once()
+
+        # Should return to LISTENING for continuous conversation
         assert pipeline.state == State.LISTENING
-
-
-@pytest.mark.asyncio
-async def test_interrupted_response_saves_spoken_text_only():
-    """When user interrupts, only spoken text + [interrupted by user] is saved."""
-    config = Config()
-
-    with patch("live_chat.pipeline.AudioInput"), \
-         patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
-         patch("live_chat.pipeline.EchoCanceller") as mock_aec_cls, \
-         patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
-         patch("live_chat.pipeline.VAD") as mock_vad_cls, \
-         patch("live_chat.pipeline.WhisperSTT") as mock_stt_cls, \
-         patch("live_chat.pipeline.PiperTTS") as mock_tts_cls, \
-         patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \
-         patch("live_chat.pipeline.Router") as mock_router_cls, \
-         patch("live_chat.pipeline.Conversation") as mock_conv_cls:
-
-        mock_out = mock_out_cls.return_value
-        mock_out.wait_async = AsyncMock()
-        mock_gain = mock_gain_cls.return_value
-        mock_vad = mock_vad_cls.return_value
-        mock_stt = mock_stt_cls.return_value
-        mock_tts = mock_tts_cls.return_value
-        mock_llm = mock_llm_cls.return_value
-        mock_router = mock_router_cls.return_value
-        mock_conv = mock_conv_cls.return_value
-        mock_aec = mock_aec_cls.return_value
-        mock_aec.cancel.side_effect = lambda c: c
-
-        mock_gain.apply.side_effect = lambda c: c.astype(np.float32) / 32768.0
-
-        pipeline = Pipeline(config)
-        pipeline.activate()
-
-        speech_chunk = (np.random.randn(512) * 5000).astype(np.int16)
-
-        # VAD start -> mid-speech -> VAD end
-        mock_vad.process.return_value = {"start": 0}
-        await pipeline._process_chunk(speech_chunk)
-        mock_vad.process.return_value = None
-        for _ in range(16):
-            await pipeline._process_chunk(speech_chunk)
-
-        mock_vad.process.return_value = {"end": 512}
-        mock_stt.transcribe.return_value = "Tell me about AI."
-        mock_router.route = AsyncMock(return_value=config.fast_model)
-        mock_conv.for_api.return_value = ("system", [{"role": "user", "content": "Tell me about AI."}])
-        mock_conv.messages = [{"role": "user", "content": "Tell me about AI."}]
-
-        # LLM streams 3 sentences, user interrupts during first playback
-        async def fake_stream_interrupted(model, system, messages):
-            yield "First sentence."
-            yield " Second sentence."
-            yield " Third sentence."
-
-        mock_llm.stream = fake_stream_interrupted
-        mock_tts.synthesize.return_value = iter([np.zeros(22050, dtype=np.int16)])
-        mock_tts.sample_rate = 22050
-
-        # Simulate barge-in: user speaks during first sentence's playback
-        call_count = 0
-        async def interrupt_during_playback():
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                pipeline._interrupted = True
-
-        mock_out.wait_async = AsyncMock(side_effect=interrupt_during_playback)
-
-        await pipeline._process_chunk(speech_chunk)
-
-        # Only the first sentence was spoken before interruption
-        mock_conv.add_assistant.assert_called_once_with(
-            "First sentence. [interrupted by user]"
-        )
