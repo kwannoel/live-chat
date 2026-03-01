@@ -3,6 +3,7 @@ import enum
 
 import numpy as np
 
+from live_chat.audio.aec import EchoCanceller
 from live_chat.audio.gain import AutoGain
 from live_chat.audio.input import AudioInput
 from live_chat.audio.output import AudioOutput
@@ -32,6 +33,7 @@ class Pipeline:
         # Components
         self._audio_in = AudioInput(config)
         self._audio_out = AudioOutput()
+        self._aec = EchoCanceller()
         self._gain = AutoGain()
         self._vad = VAD()
         self._stt = WhisperSTT(config)
@@ -79,6 +81,8 @@ class Pipeline:
             self._audio_in.stop()
 
     async def _process_chunk(self, chunk: np.ndarray):
+        # Apply echo cancellation (subtracts TTS playback from mic signal)
+        chunk = self._aec.cancel(chunk)
         # Apply auto-gain to get normalized float32
         normalized = self._gain.apply(chunk)
 
@@ -99,20 +103,14 @@ class Pipeline:
         elif self.state == State.SPEAKING:
             event = self._vad.process(normalized)
             if event and "start" in event:
-                # Only trigger barge-in if raw audio energy is high enough
-                # to be direct speech, not speaker echo picked up by mic.
-                raw_rms = float(np.sqrt(np.mean((chunk.astype(np.float32) / 32768.0) ** 2)))
-                if raw_rms > self._BARGE_IN_RMS_THRESHOLD:
-                    self._interrupted = True
-                    self._audio_out.stop()
-                    self._speech_buffer = [normalized]
-                    self._set_state(State.LISTENING)
+                self._interrupted = True
+                self._audio_out.stop()
+                self._aec.clear()
+                self._speech_buffer = [normalized]
+                self._set_state(State.LISTENING)
 
     # Minimum speech duration to avoid noise triggering STT (0.3s at 16kHz)
     _MIN_SPEECH_SAMPLES = 4800
-    # Raw RMS threshold for barge-in — must be loud enough to be direct speech,
-    # not speaker echo picked up by the mic (echo is typically much quieter)
-    _BARGE_IN_RMS_THRESHOLD = 0.03
 
     async def _process_speech(self):
         """Transcribe buffered speech, route, call LLM, speak response."""
@@ -195,5 +193,7 @@ class Pipeline:
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence."""
         for audio_chunk in self._tts.synthesize(sentence):
+            # Register TTS audio as echo reference before playing
+            self._aec.set_reference(audio_chunk, self._tts.sample_rate)
             self._audio_out.play(audio_chunk, sample_rate=self._tts.sample_rate)
             await self._audio_out.wait_async()

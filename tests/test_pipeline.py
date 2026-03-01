@@ -9,6 +9,7 @@ from live_chat.config import Config
 def test_pipeline_initial_state():
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.EchoCanceller"), \
          patch("live_chat.pipeline.AutoGain"), \
          patch("live_chat.pipeline.VAD"), \
          patch("live_chat.pipeline.WhisperSTT"), \
@@ -33,6 +34,7 @@ async def test_speak_sentence_uses_async_wait():
     config = Config()
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
+         patch("live_chat.pipeline.EchoCanceller"), \
          patch("live_chat.pipeline.AutoGain"), \
          patch("live_chat.pipeline.VAD"), \
          patch("live_chat.pipeline.WhisperSTT"), \

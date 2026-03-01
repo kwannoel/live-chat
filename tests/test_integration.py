@@ -13,6 +13,7 @@ async def test_full_pipeline_vad_to_response():
 
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
+         patch("live_chat.pipeline.EchoCanceller") as mock_aec_cls, \
          patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
          patch("live_chat.pipeline.VAD") as mock_vad_cls, \
          patch("live_chat.pipeline.WhisperSTT") as mock_stt_cls, \
@@ -30,6 +31,8 @@ async def test_full_pipeline_vad_to_response():
         mock_llm = mock_llm_cls.return_value
         mock_router = mock_router_cls.return_value
         mock_conv = mock_conv_cls.return_value
+        mock_aec = mock_aec_cls.return_value
+        mock_aec.cancel.side_effect = lambda c: c
 
         # AutoGain passes through as float32
         mock_gain.apply.side_effect = lambda c: c.astype(np.float32) / 32768.0
@@ -89,6 +92,7 @@ async def test_interrupted_response_saves_spoken_text_only():
 
     with patch("live_chat.pipeline.AudioInput"), \
          patch("live_chat.pipeline.AudioOutput") as mock_out_cls, \
+         patch("live_chat.pipeline.EchoCanceller") as mock_aec_cls, \
          patch("live_chat.pipeline.AutoGain") as mock_gain_cls, \
          patch("live_chat.pipeline.VAD") as mock_vad_cls, \
          patch("live_chat.pipeline.WhisperSTT") as mock_stt_cls, \
@@ -106,6 +110,8 @@ async def test_interrupted_response_saves_spoken_text_only():
         mock_llm = mock_llm_cls.return_value
         mock_router = mock_router_cls.return_value
         mock_conv = mock_conv_cls.return_value
+        mock_aec = mock_aec_cls.return_value
+        mock_aec.cancel.side_effect = lambda c: c
 
         mock_gain.apply.side_effect = lambda c: c.astype(np.float32) / 32768.0
 
