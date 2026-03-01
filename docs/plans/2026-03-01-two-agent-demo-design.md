@@ -76,6 +76,51 @@ activate()
 
 Download a second Piper voice (e.g., `en_US-joe-medium`) to `~/.local/share/piper/voices/` so the two agents sound distinct.
 
+## Running the Demo
+
+### Prerequisites
+
+1. Install the project: `pip install -e .`
+2. Set `ANTHROPIC_API_KEY` in `.env` or environment
+3. Ensure two Piper voices are installed in `~/.local/share/piper/voices/`:
+   - `en_US-lessac-medium` (Alice — included by default)
+   - `en_US-joe-medium` (Bob — download from [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)):
+     ```
+     cd ~/.local/share/piper/voices/
+     curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium/en_US-joe-medium.onnx
+     curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium/en_US-joe-medium.onnx.json
+     ```
+
+### Steps
+
+Open two terminal windows on the same machine.
+
+**Terminal 1** — start Alice (passive, listens):
+```
+live-chat --config demo/alice.yaml
+```
+Wait for the "Ready!" message.
+
+**Terminal 2** — start Bob (active, speaks first):
+```
+live-chat --config demo/bob.yaml
+```
+Bob auto-generates an opening line and speaks it. Alice hears it through the mic, responds, and the conversation continues autonomously.
+
+Press **Ctrl+C** in either terminal to stop.
+
+### Customization
+
+Create your own YAML config with any combination of:
+
+```yaml
+tts_voice: en_US-joe-medium    # Piper voice name
+auto_speak: true                # Speak first on startup
+persona: |                      # Custom system prompt
+  You are a pirate captain.
+  Speak in pirate dialect. Keep it short.
+```
+
 ## What Stays the Same
 
 The existing audio pipeline, VAD, STT, TTS engine, LLM client, router, and state machine are all unchanged. The demo is just a configuration-level feature on top of the existing architecture.
