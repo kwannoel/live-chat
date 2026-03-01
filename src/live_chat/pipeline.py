@@ -112,6 +112,21 @@ class Pipeline:
     # Minimum speech duration to avoid noise triggering STT (0.3s at 16kHz)
     _MIN_SPEECH_SAMPLES = 4800
 
+    async def _drain_queue(self):
+        """Discard stale audio in queue (echo from TTS playback)."""
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        # Brief cooldown: let residual echo decay, then drain again
+        await asyncio.sleep(0.3)
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
     async def _process_speech(self):
         """Transcribe buffered speech, route, call LLM, speak response."""
         if not self._speech_buffer:
@@ -139,6 +154,7 @@ class Pipeline:
             self._on_transcript("user", text, None)
         self._conversation.add_user(text)
 
+        was_interrupted = False
         try:
             # Route
             model = await self._router.route(text, self._conversation.messages[:-1])
@@ -149,7 +165,6 @@ class Pipeline:
             full_response = []
             spoken_sentences = []
             sentence_buffer = []
-            was_interrupted = False
 
             async for token in self._llm.stream(model, system, messages):
                 full_response.append(token)
@@ -187,13 +202,50 @@ class Pipeline:
         except Exception as e:
             print(f"  [error] {type(e).__name__}: {e}")
 
-        self._set_state(State.LISTENING)
-        self._vad.reset()
+        if not was_interrupted:
+            # Normal completion: drain echo chunks before listening
+            await self._drain_queue()
+            self._set_state(State.LISTENING)
+            self._vad.reset()
+        # If interrupted: state is already LISTENING (set during barge-in),
+        # VAD is tracking user's speech — don't drain or reset
 
     async def _speak_sentence(self, sentence: str):
-        """Synthesize and play a single sentence."""
+        """Synthesize and play a single sentence.
+
+        Processes mic chunks during playback so barge-in detection works
+        in real-time instead of chunks piling up in the queue.
+        """
         for audio_chunk in self._tts.synthesize(sentence):
             # Register TTS audio as echo reference before playing
             self._aec.set_reference(audio_chunk, self._tts.sample_rate)
             self._audio_out.play(audio_chunk, sample_rate=self._tts.sample_rate)
-            await self._audio_out.wait_async()
+
+            # Process mic input while waiting for playback
+            playback_done = asyncio.ensure_future(self._audio_out.wait_async())
+            while not playback_done.done() and not self._interrupted:
+                try:
+                    mic_chunk = await asyncio.wait_for(
+                        self._audio_queue.get(), timeout=0.032
+                    )
+                    mic_chunk = self._aec.cancel(mic_chunk)
+                    normalized = self._gain.apply(mic_chunk)
+                    event = self._vad.process(normalized)
+                    if event and "start" in event:
+                        self._interrupted = True
+                        self._audio_out.stop()
+                        self._aec.clear()
+                        self._speech_buffer = [normalized]
+                        self._set_state(State.LISTENING)
+                except asyncio.TimeoutError:
+                    pass
+
+            if not playback_done.done():
+                playback_done.cancel()
+                try:
+                    await playback_done
+                except asyncio.CancelledError:
+                    pass
+
+            if self._interrupted:
+                return
