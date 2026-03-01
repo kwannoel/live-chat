@@ -12,7 +12,6 @@ dependencies = [
     "numpy>=1.26",
     "silero-vad>=5.1",
     "torch>=2.0",
-    "pyaec>=1.0",
 ]
 
 [project.optional-dependencies]
