@@ -1,5 +1,6 @@
 import asyncio
 import enum
+import time
 
 import numpy as np
 
@@ -49,6 +50,7 @@ class Pipeline:
         # Speech buffer for accumulating audio during listening
         self._speech_buffer: list[np.ndarray] = []
         self._interrupted = False
+        self._tts_end_time = 0.0
 
     def on_state_change(self, callback: callable):
         self._on_state_change = callback
@@ -80,7 +82,22 @@ class Pipeline:
         finally:
             self._audio_in.stop()
 
+    # Raw int16 RMS threshold to distinguish real speech from speaker echo.
+    # Normal speech at laptop mic: ~3000-10000 RMS. Speaker echo: ~500-2000.
+    _BARGE_IN_RMS = 3000
+
     async def _process_chunk(self, chunk: np.ndarray):
+        # Post-TTS echo gate: ignore low-energy chunks shortly after speaking.
+        # Check raw mic signal before AEC/AutoGain to avoid amplified echo.
+        if self.state == State.LISTENING and self._tts_end_time > 0:
+            elapsed = time.monotonic() - self._tts_end_time
+            if elapsed < 1.5:
+                raw_rms = float(np.sqrt(np.mean(chunk.astype(float) ** 2)))
+                if raw_rms < self._BARGE_IN_RMS:
+                    return
+            else:
+                self._tts_end_time = 0
+
         # Apply echo cancellation (subtracts TTS playback from mic signal)
         chunk = self._aec.cancel(chunk)
         # Apply auto-gain to get normalized float32
@@ -203,39 +220,42 @@ class Pipeline:
             print(f"  [error] {type(e).__name__}: {e}")
 
         if not was_interrupted:
-            # Normal completion: drain echo chunks before listening
+            # Normal completion: drain echo chunks + set echo gate timer
             await self._drain_queue()
-            self._set_state(State.LISTENING)
-            self._vad.reset()
-        # If interrupted: state is already LISTENING (set during barge-in),
-        # VAD is tracking user's speech — don't drain or reset
+            self._tts_end_time = time.monotonic()
+
+        self._set_state(State.LISTENING)
+        self._vad.reset()
 
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence.
 
-        Processes mic chunks during playback so barge-in detection works
-        in real-time instead of chunks piling up in the queue.
+        Consumes mic chunks during playback to prevent queue buildup.
+        Detects barge-in via raw mic energy (not VAD — VAD can't
+        distinguish echo from speech reliably without hardware AEC).
         """
         for audio_chunk in self._tts.synthesize(sentence):
-            # Register TTS audio as echo reference before playing
             self._aec.set_reference(audio_chunk, self._tts.sample_rate)
             self._audio_out.play(audio_chunk, sample_rate=self._tts.sample_rate)
 
-            # Process mic input while waiting for playback
+            # Consume mic chunks while waiting for playback to finish
             playback_done = asyncio.ensure_future(self._audio_out.wait_async())
             while not playback_done.done() and not self._interrupted:
                 try:
                     mic_chunk = await asyncio.wait_for(
                         self._audio_queue.get(), timeout=0.032
                     )
-                    mic_chunk = self._aec.cancel(mic_chunk)
-                    normalized = self._gain.apply(mic_chunk)
-                    event = self._vad.process(normalized)
-                    if event and "start" in event:
+                    # Barge-in: only real speech (loud) triggers interruption.
+                    # Use raw int16 energy — AutoGain would amplify echo too.
+                    raw_rms = float(np.sqrt(np.mean(
+                        mic_chunk.astype(float) ** 2
+                    )))
+                    if raw_rms > self._BARGE_IN_RMS:
                         self._interrupted = True
                         self._audio_out.stop()
                         self._aec.clear()
-                        self._speech_buffer = [normalized]
+                        self._vad.reset()
+                        self._speech_buffer.clear()
                         self._set_state(State.LISTENING)
                 except asyncio.TimeoutError:
                     pass
