@@ -230,41 +230,24 @@ class Pipeline:
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence.
 
-        Consumes mic chunks during playback to prevent queue buildup.
-        Detects barge-in via raw mic energy (not VAD — VAD can't
-        distinguish echo from speech reliably without hardware AEC).
+        Consumes and discards mic chunks during playback to prevent
+        queue buildup. Real-time barge-in is not possible without
+        hardware AEC — echo and speech are indistinguishable by energy.
         """
         for audio_chunk in self._tts.synthesize(sentence):
             self._aec.set_reference(audio_chunk, self._tts.sample_rate)
             self._audio_out.play(audio_chunk, sample_rate=self._tts.sample_rate)
 
-            # Consume mic chunks while waiting for playback to finish
+            # Consume and discard mic chunks during playback.
+            # Without hardware AEC, we can't distinguish echo from
+            # real speech, so we don't attempt barge-in here.
             playback_done = asyncio.ensure_future(self._audio_out.wait_async())
-            while not playback_done.done() and not self._interrupted:
+            while not playback_done.done():
                 try:
-                    mic_chunk = await asyncio.wait_for(
+                    await asyncio.wait_for(
                         self._audio_queue.get(), timeout=0.032
                     )
-                    # Barge-in: only real speech (loud) triggers interruption.
-                    # Use raw int16 energy — AutoGain would amplify echo too.
-                    raw_rms = float(np.sqrt(np.mean(
-                        mic_chunk.astype(float) ** 2
-                    )))
-                    if raw_rms > self._BARGE_IN_RMS:
-                        self._interrupted = True
-                        self._audio_out.stop()
-                        self._aec.clear()
-                        self._vad.reset()
-                        self._speech_buffer.clear()
-                        self._set_state(State.LISTENING)
                 except asyncio.TimeoutError:
-                    pass
-
-            if not playback_done.done():
-                playback_done.cancel()
-                try:
-                    await playback_done
-                except asyncio.CancelledError:
                     pass
 
             if self._interrupted:
