@@ -219,6 +219,10 @@ class Pipeline:
         except Exception as e:
             print(f"  [error] {type(e).__name__}: {e}")
 
+        # Clear AEC — reference frames from TTS are stale and would
+        # corrupt mic audio if applied to post-TTS chunks
+        self._aec.clear()
+
         if not was_interrupted:
             # Normal completion: drain echo chunks + set echo gate timer
             await self._drain_queue()
