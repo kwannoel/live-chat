@@ -8,8 +8,9 @@ Build on the user's ideas rather than just answering. Ask clarifying questions w
 
 
 class Conversation:
-    def __init__(self):
+    def __init__(self, persona: str | None = None):
         self.messages: list[dict[str, str]] = []
+        self._system = persona or SYSTEM_PROMPT
 
     def add_user(self, text: str):
         self.messages.append({"role": "user", "content": text})
@@ -19,4 +20,4 @@ class Conversation:
 
     def for_api(self) -> tuple[str, list[dict[str, str]]]:
         """Returns (system_prompt, messages) for the Anthropic API."""
-        return SYSTEM_PROMPT, list(self.messages)
+        return self._system, list(self.messages)

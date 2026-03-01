@@ -26,3 +26,17 @@ def test_conversation_for_api_includes_system():
     system, messages = conv.for_api()
     assert "spoken" in system.lower() or "concise" in system.lower()
     assert messages == [{"role": "user", "content": "Hi"}]
+
+
+def test_conversation_custom_persona():
+    conv = Conversation(persona="You are Alice.")
+    conv.add_user("Hi")
+    system, messages = conv.for_api()
+    assert system == "You are Alice."
+
+
+def test_conversation_default_persona():
+    conv = Conversation()
+    conv.add_user("Hi")
+    system, _ = conv.for_api()
+    assert "voice-first" in system.lower() or "spoken" in system.lower()
