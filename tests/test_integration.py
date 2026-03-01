@@ -55,7 +55,7 @@ async def test_full_pipeline_vad_to_response():
 
         # 3. Mid-speech chunks (no event) — feed enough to exceed min duration
         mock_vad.process.return_value = None
-        for _ in range(10):
+        for _ in range(16):
             await pipeline._process_chunk(speech_chunk)
 
         # 4. VAD detects speech end
@@ -124,7 +124,7 @@ async def test_interrupted_response_saves_spoken_text_only():
         mock_vad.process.return_value = {"start": 0}
         await pipeline._process_chunk(speech_chunk)
         mock_vad.process.return_value = None
-        for _ in range(10):
+        for _ in range(16):
             await pipeline._process_chunk(speech_chunk)
 
         mock_vad.process.return_value = {"end": 512}

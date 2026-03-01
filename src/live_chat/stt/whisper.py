@@ -17,8 +17,20 @@ class WhisperSTT:
             path_or_hf_repo=self._model_path,
             language="en",
         )
-        # Filter out Whisper hallucinations on noise
         segments = result.get("segments", [])
-        if segments and segments[0].get("no_speech_prob", 0) > 0.5:
+        if not segments:
             return ""
+
+        # Filter Whisper hallucinations (common on silence/echo):
+        # 1. High no_speech_prob = Whisper itself thinks no speech
+        # 2. Low avg_logprob = Whisper isn't confident in the transcription
+        # 3. High compression_ratio = repetitive/degenerate output
+        seg = segments[0]
+        if seg.get("no_speech_prob", 0) > 0.3:
+            return ""
+        if seg.get("avg_logprob", 0) < -0.7:
+            return ""
+        if seg.get("compression_ratio", 0) > 2.4:
+            return ""
+
         return result["text"].strip()

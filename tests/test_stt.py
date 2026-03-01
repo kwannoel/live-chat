@@ -9,7 +9,7 @@ def test_whisper_transcribe():
     with patch("live_chat.stt.whisper.mlx_whisper") as mock_whisper:
         mock_whisper.transcribe.return_value = {
             "text": " Hello world",
-            "segments": [],
+            "segments": [{"no_speech_prob": 0.01, "avg_logprob": -0.3, "compression_ratio": 1.2}],
         }
 
         stt = WhisperSTT(Config())

@@ -126,8 +126,8 @@ class Pipeline:
                 self._speech_buffer = [normalized]
                 self._set_state(State.LISTENING)
 
-    # Minimum speech duration to avoid noise triggering STT (0.3s at 16kHz)
-    _MIN_SPEECH_SAMPLES = 4800
+    # Minimum speech duration to avoid noise/echo triggering STT (0.5s at 16kHz)
+    _MIN_SPEECH_SAMPLES = 8000
 
     async def _drain_queue(self):
         """Discard stale audio in queue (echo from TTS playback)."""
