@@ -38,7 +38,7 @@ class Pipeline:
         self._tts = PiperTTS(config)
         self._llm = LLMClient(config)
         self._router = Router(config)
-        self._conversation = Conversation()
+        self._conversation = Conversation(persona=config.persona)
 
         # Audio queue
         self._audio_queue: asyncio.Queue[np.ndarray] = asyncio.Queue()
@@ -66,6 +66,8 @@ class Pipeline:
             self._set_state(State.LISTENING)
             self._speech_buffer.clear()
             self._vad.reset()
+            if self.config.auto_speak:
+                asyncio.ensure_future(self._auto_speak())
 
     async def run(self):
         """Main loop — process audio chunks from the mic."""
@@ -169,6 +171,59 @@ class Pipeline:
             print(f"  [error] {type(e).__name__}: {e}")
 
         # Unmute mic, drain any stale chunks, resume listening
+        self._audio_in.unmute()
+        await asyncio.sleep(0.3)
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        self._set_state(State.LISTENING)
+        self._vad.reset()
+
+    async def _auto_speak(self):
+        """Generate and speak an opening line (used when auto_speak=True)."""
+        self._set_state(State.THINKING)
+
+        opener_prompt = (
+            "Start a conversation. Introduce yourself briefly and "
+            "bring up something interesting to talk about."
+        )
+        self._conversation.add_user(opener_prompt)
+        model = await self._router.route(opener_prompt, [])
+        system, messages = self._conversation.for_api()
+
+        self._set_state(State.SPEAKING)
+        self._audio_in.mute()
+
+        full_response = []
+        sentence_buffer = []
+
+        async for token in self._llm.stream(model, system, messages):
+            full_response.append(token)
+            sentence_buffer.append(token)
+
+            current = "".join(sentence_buffer)
+            if any(current.rstrip().endswith(p) for p in ".!?"):
+                sentence = current.strip()
+                if sentence:
+                    await self._speak_sentence(sentence)
+                sentence_buffer.clear()
+
+        remaining = "".join(sentence_buffer).strip()
+        if remaining:
+            await self._speak_sentence(remaining)
+
+        response_text = "".join(full_response)
+
+        # Remove the synthetic user message, keep only assistant response
+        self._conversation.messages.clear()
+        self._conversation.add_assistant(response_text)
+
+        if self._on_transcript:
+            self._on_transcript("assistant", response_text, model)
+
         self._audio_in.unmute()
         await asyncio.sleep(0.3)
         while not self._audio_queue.empty():
