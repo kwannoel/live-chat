@@ -98,7 +98,7 @@ def test_config_from_dict():
 
 **Step 5: Run test to verify it fails**
 
-Run: `cd /Users/noel/projects/live-chat && pip install -e ".[dev]" && pytest tests/test_config.py -v`
+Run: `pip install -e ".[dev]" && pytest tests/test_config.py -v`
 Expected: FAIL (config module doesn't exist yet)
 
 **Step 6: Implement config**
