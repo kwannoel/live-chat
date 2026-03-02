@@ -12,6 +12,9 @@ class Config:
     tts_voice: str = "en_US-lessac-medium"
     persona: str | None = None
     auto_speak: bool = False
+    backend: str = "api"
+    cli_path: str = "claude"
+    min_silence_ms: int = 600
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":

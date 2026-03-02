@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import shutil
 from pathlib import Path
 
 from rich.console import Console
@@ -36,23 +37,32 @@ async def run(config_path: str | None = None):
     config = Config.load(path)
 
     console.print("[bold]Live Chat[/bold] — voice-first agent")
-    console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
-    console.print(f"Deep model: [cyan]{config.deep_model}[/cyan]")
+    console.print(f"Backend:    [cyan]{config.backend}[/cyan]")
+    if config.backend == "cli":
+        cli_resolved = shutil.which(config.cli_path)
+        if not cli_resolved:
+            console.print(f"[bold red]CLI not found:[/bold red] {config.cli_path}")
+            return
+        console.print(f"CLI path:   [cyan]{cli_resolved}[/cyan]")
+    else:
+        console.print(f"Fast model: [cyan]{config.fast_model}[/cyan]")
+        console.print(f"Deep model: [cyan]{config.deep_model}[/cyan]")
     console.print(f"TTS voice:  [cyan]{config.tts_voice}[/cyan]")
     console.print("[bold]Ctrl+C[/bold] to quit.\n")
 
-    # Verify API key before loading heavy models
-    console.print("[dim]Checking API key...[/dim]")
-    try:
-        client = AsyncAnthropic()
-        await client.messages.create(
-            model=config.fast_model,
-            max_tokens=1,
-            messages=[{"role": "user", "content": "hi"}],
-        )
-    except Exception as e:
-        console.print(f"[bold red]API key check failed:[/bold red] {e}")
-        return
+    if config.backend == "api":
+        # Verify API key before loading heavy models
+        console.print("[dim]Checking API key...[/dim]")
+        try:
+            client = AsyncAnthropic()
+            await client.messages.create(
+                model=config.fast_model,
+                max_tokens=1,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        except Exception as e:
+            console.print(f"[bold red]API key check failed:[/bold red] {e}")
+            return
 
     console.print("[dim]Loading models...[/dim]")
     pipeline = Pipeline(config)
@@ -65,7 +75,10 @@ async def run(config_path: str | None = None):
         if role == "user":
             console.print(f"\n  [bold cyan]You:[/bold cyan] {text}")
         else:
-            model_short = model.split("-")[1] if model and "-" in model else "?"
+            if model == "cli":
+                model_short = "cli"
+            else:
+                model_short = model.split("-")[1] if model and "-" in model else "?"
             console.print(f"  [bold magenta]Agent ({model_short}):[/bold magenta] {text}\n")
 
     pipeline.on_state_change(on_state_change)

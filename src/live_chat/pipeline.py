@@ -8,6 +8,7 @@ from live_chat.audio.input import AudioInput
 from live_chat.audio.output import AudioOutput
 from live_chat.audio.vad import VAD
 from live_chat.config import Config
+from live_chat.llm.cli_client import CLIClient
 from live_chat.llm.client import LLMClient
 from live_chat.llm.conversation import Conversation
 from live_chat.llm.router import Router
@@ -33,11 +34,15 @@ class Pipeline:
         self._audio_in = AudioInput(config)
         self._audio_out = AudioOutput()
         self._gain = AutoGain()
-        self._vad = VAD()
+        self._vad = VAD(min_silence_ms=config.min_silence_ms)
         self._stt = WhisperSTT(config)
         self._tts = PiperTTS(config)
-        self._llm = LLMClient(config)
-        self._router = Router(config)
+        if config.backend == "cli":
+            self._llm = CLIClient(config)
+            self._router = None
+        else:
+            self._llm = LLMClient(config)
+            self._router = Router(config)
         self._conversation = Conversation(persona=config.persona)
 
         # Audio queue
@@ -71,6 +76,11 @@ class Pipeline:
 
     async def run(self):
         """Main loop — process audio chunks from the mic."""
+        # Pre-spawn CLI process so first LLM call is faster
+        if hasattr(self._llm, "warm_up"):
+            system, _ = self._conversation.for_api()
+            await self._llm.warm_up(system)
+
         self._audio_in.set_loop(asyncio.get_event_loop())
         self._audio_in.start()
         try:
@@ -130,39 +140,17 @@ class Pipeline:
 
         try:
             # Route
-            model = await self._router.route(text, self._conversation.messages[:-1])
+            if self._router is not None:
+                model = await self._router.route(text, self._conversation.messages[:-1])
+            else:
+                model = "cli"
             system, messages = self._conversation.for_api()
 
-            # Stream LLM response, buffer sentences, speak as they complete
+            # Stream LLM response and speak concurrently via sentence queue
             self._set_state(State.SPEAKING)
             self._audio_in.mute()
-            full_response = []
-            spoken_sentences = []
-            sentence_buffer = []
 
-            async for token in self._llm.stream(model, system, messages):
-                full_response.append(token)
-                sentence_buffer.append(token)
-
-                current = "".join(sentence_buffer)
-                if any(current.rstrip().endswith(p) for p in ".!?"):
-                    sentence = current.strip()
-                    if sentence:
-                        await self._speak_sentence(sentence)
-                        spoken_sentences.append(sentence)
-                    sentence_buffer.clear()
-
-                if self._interrupted:
-                    self._interrupted = False
-                    break
-
-            # Speak any remaining text
-            remaining = "".join(sentence_buffer).strip()
-            if remaining and not self._interrupted:
-                await self._speak_sentence(remaining)
-                spoken_sentences.append(remaining)
-
-            response_text = "".join(full_response)
+            response_text = await self._stream_and_speak(model, system, messages)
             self._conversation.add_assistant(response_text)
             if self._on_transcript:
                 self._on_transcript("assistant", response_text, model)
@@ -191,31 +179,16 @@ class Pipeline:
             "bring up something interesting to talk about."
         )
         self._conversation.add_user(opener_prompt)
-        model = await self._router.route(opener_prompt, [])
+        if self._router is not None:
+            model = await self._router.route(opener_prompt, [])
+        else:
+            model = "cli"
         system, messages = self._conversation.for_api()
 
         self._set_state(State.SPEAKING)
         self._audio_in.mute()
 
-        full_response = []
-        sentence_buffer = []
-
-        async for token in self._llm.stream(model, system, messages):
-            full_response.append(token)
-            sentence_buffer.append(token)
-
-            current = "".join(sentence_buffer)
-            if any(current.rstrip().endswith(p) for p in ".!?"):
-                sentence = current.strip()
-                if sentence:
-                    await self._speak_sentence(sentence)
-                sentence_buffer.clear()
-
-        remaining = "".join(sentence_buffer).strip()
-        if remaining:
-            await self._speak_sentence(remaining)
-
-        response_text = "".join(full_response)
+        response_text = await self._stream_and_speak(model, system, messages)
 
         # Remove the synthetic user message, keep only assistant response
         self._conversation.messages.clear()
@@ -234,6 +207,59 @@ class Pipeline:
 
         self._set_state(State.LISTENING)
         self._vad.reset()
+
+    async def _stream_and_speak(
+        self, model: str, system: str, messages: list[dict]
+    ) -> str:
+        """Stream LLM tokens and speak sentences concurrently.
+
+        A producer task reads from the LLM and pushes complete sentences
+        into a queue. A consumer task speaks them. This eliminates dead
+        air between sentences caused by waiting for the LLM.
+        """
+        sentence_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        full_response: list[str] = []
+
+        async def _produce():
+            sentence_buffer: list[str] = []
+            async for token in self._llm.stream(model, system, messages):
+                full_response.append(token)
+                sentence_buffer.append(token)
+
+                current = "".join(sentence_buffer)
+                stripped = current.rstrip()
+                is_sentence_end = any(stripped.endswith(p) for p in ".!?")
+                is_clause_break = (
+                    len(current.split()) >= 4
+                    and any(stripped.endswith(p) for p in ",;:\u2014")
+                )
+                if is_sentence_end or is_clause_break:
+                    chunk = current.strip()
+                    if chunk:
+                        await sentence_queue.put(chunk)
+                    sentence_buffer.clear()
+
+                if self._interrupted:
+                    self._interrupted = False
+                    break
+
+            remaining = "".join(sentence_buffer).strip()
+            if remaining and not self._interrupted:
+                await sentence_queue.put(remaining)
+            await sentence_queue.put(None)  # sentinel
+
+        async def _consume():
+            while True:
+                sentence = await sentence_queue.get()
+                if sentence is None:
+                    break
+                await self._speak_sentence(sentence)
+
+        producer = asyncio.create_task(_produce())
+        consumer = asyncio.create_task(_consume())
+        await asyncio.gather(producer, consumer)
+
+        return "".join(full_response)
 
     async def _speak_sentence(self, sentence: str):
         """Synthesize and play a single sentence."""

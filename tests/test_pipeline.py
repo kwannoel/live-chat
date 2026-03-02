@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
 from live_chat.pipeline import Pipeline, State
 from live_chat.config import Config
@@ -120,3 +120,58 @@ def test_pipeline_passes_persona_to_conversation():
          patch("live_chat.pipeline.Conversation") as mock_conv_cls:
         Pipeline(config)
         mock_conv_cls.assert_called_once_with(persona="You are Alice.")
+
+
+def test_pipeline_cli_backend_uses_cli_client():
+    """When backend='cli', pipeline uses CLIClient and router is None."""
+    config = Config(backend="cli")
+    with patch("live_chat.pipeline.AudioInput"), \
+         patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.AutoGain"), \
+         patch("live_chat.pipeline.VAD"), \
+         patch("live_chat.pipeline.WhisperSTT"), \
+         patch("live_chat.pipeline.PiperTTS"), \
+         patch("live_chat.pipeline.CLIClient") as mock_cli_cls, \
+         patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \
+         patch("live_chat.pipeline.Router") as mock_router_cls, \
+         patch("live_chat.pipeline.Conversation"):
+        pipeline = Pipeline(config)
+        mock_cli_cls.assert_called_once_with(config)
+        mock_llm_cls.assert_not_called()
+        mock_router_cls.assert_not_called()
+        assert pipeline._router is None
+
+
+def test_pipeline_api_backend_uses_llm_client():
+    """When backend='api' (default), pipeline uses LLMClient and Router."""
+    config = Config(backend="api")
+    with patch("live_chat.pipeline.AudioInput"), \
+         patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.AutoGain"), \
+         patch("live_chat.pipeline.VAD"), \
+         patch("live_chat.pipeline.WhisperSTT"), \
+         patch("live_chat.pipeline.PiperTTS"), \
+         patch("live_chat.pipeline.CLIClient") as mock_cli_cls, \
+         patch("live_chat.pipeline.LLMClient") as mock_llm_cls, \
+         patch("live_chat.pipeline.Router") as mock_router_cls, \
+         patch("live_chat.pipeline.Conversation"):
+        pipeline = Pipeline(config)
+        mock_llm_cls.assert_called_once_with(config)
+        mock_router_cls.assert_called_once_with(config)
+        mock_cli_cls.assert_not_called()
+        assert pipeline._router is not None
+
+
+def test_pipeline_passes_min_silence_ms_to_vad():
+    config = Config(min_silence_ms=400)
+    with patch("live_chat.pipeline.AudioInput"), \
+         patch("live_chat.pipeline.AudioOutput"), \
+         patch("live_chat.pipeline.AutoGain"), \
+         patch("live_chat.pipeline.VAD") as mock_vad_cls, \
+         patch("live_chat.pipeline.WhisperSTT"), \
+         patch("live_chat.pipeline.PiperTTS"), \
+         patch("live_chat.pipeline.LLMClient"), \
+         patch("live_chat.pipeline.Router"), \
+         patch("live_chat.pipeline.Conversation"):
+        Pipeline(config)
+        mock_vad_cls.assert_called_once_with(min_silence_ms=400)
