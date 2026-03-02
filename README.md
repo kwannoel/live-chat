@@ -2,7 +2,9 @@
 
 Voice-first conversational AI agent. Listens through your mic, thinks with Claude, and speaks back using local TTS. Runs entirely from the terminal.
 
-**[Demo recording](demo/recordings/two-agent-demo.mp4)** — two AI agents (Alice and Bob) having an autonomous conversation.
+### Demo — two AI agents (Alice and Bob) having an autonomous conversation
+
+https://github.com/user-attachments/assets/216f65e5-054d-4edc-9b3d-a643ae0961a5
 
 ## How it works
 
