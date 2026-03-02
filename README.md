@@ -2,7 +2,7 @@
 
 Voice-first conversational AI agent. Listens through your mic, thinks with Claude, and speaks back using local TTS. Runs entirely from the terminal.
 
-**[Demo recording (audio)](demo/recordings/two-agent-demo.m4a)** — two AI agents (Alice and Bob) having an autonomous conversation.
+**[Demo recording](demo/recordings/two-agent-demo.mp4)** — two AI agents (Alice and Bob) having an autonomous conversation.
 
 ## How it works
 
@@ -23,6 +23,8 @@ Requires Python 3.10+ and macOS (Apple Silicon for mlx-whisper).
 ```bash
 git clone https://github.com/kwannoel/live-chat.git
 cd live-chat
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
@@ -41,13 +43,18 @@ curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessa
 
 Choose one:
 
-- **API backend** (default): set `ANTHROPIC_API_KEY` in `.env` or your environment
+- **API backend** (default): create a `.env` file in the project root with your API key:
+  ```
+  ANTHROPIC_API_KEY='sk-ant-...'
+  ```
 - **CLI backend** (free with Claude subscription): install and authenticate the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code), then set `backend: cli` in your config
 
 ## Usage
 
 ```bash
-# Default config (API backend)
+source .venv/bin/activate
+
+# Default config (API backend, reads key from .env)
 live-chat
 
 # Custom config
